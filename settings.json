@@ -1,0 +1,13 @@
+{
+	"telegramToken": "1163165731:AAFLt3bHNfohz-ulY8kU_0VVgBny5Vr4EkA",
+
+	"allowedUsers": [
+		"spiny_105",
+		"mooseiclimb"
+	],
+
+	"localDirs": [
+		".\\папка_1\\подпапка\\",
+		".\\папка_2\\"
+	]
+}
