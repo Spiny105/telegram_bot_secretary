@@ -1,17 +1,30 @@
 # coding=utf-8
-import telebot
-from telebot import types
 import json
 import os
+from telethon import TelegramClient, events
+
+# ключить/выключить отладку
+debug_mode = 0
 
 # Загрузить настройки из файла
 with open("settings.json", "r", encoding="utf-8") as read_file:
     configuration = json.load(read_file)
 
-# Распарсиить полученные настройки
-token = configuration.get('telegramToken')
+# Распарсить полученные настройки
 allowed_users = configuration.get("allowedUsers")
 local_dirs = configuration.get("localDirs")
+api_id = configuration.get("api_id")
+api_hash = configuration.get("api_hash")
+session = configuration.get("session")
+last_received_message = None
+
+
+# Отправить сообщение о том, что идет сохранение предидущих данных
+async def send_prev_incomplete_receive_detected(event):
+    reply = 'Сначала должно быть завершено сохранение прошлых данных!\n' \
+            'Пользователь  = ' + last_received_message.sender.username
+    await event.respond(reply)
+
 
 # Проверить папки для сохранения файлов. Если их нет, то создать
 for path in local_dirs:
@@ -21,89 +34,77 @@ for path in local_dirs:
     except OSError:
         print("Не могу создать папку!")
 
-# Запустить бота
-bot = telebot.TeleBot(token)
-
-# Здесь хранятся данные о последнем принятом сообщении с файлом
-messages_with_file = None
-
 
 # Проверка на то, что пользователь в списке разрешенных
-def is_user_allowed(message):
-    user = message.chat.username
+def is_user_allowed(user):
     return user in allowed_users
 
 
-# Нарисовать кнопки по списку папок для сохрания
-def draw_save_buttons(dirs):
-    keyboard = types.InlineKeyboardMarkup()
-    for item in dirs:
-        key = types.InlineKeyboardButton(text=item, callback_data=item)
-        keyboard.add(key)
-    return keyboard
+# Запускаем клинт для взаимодействия с телеграмом
+client = TelegramClient(session, api_id, api_hash)
 
 
-# Реакция на сообщение (без файла)
-@bot.message_handler(content_types=['text'])
-def get_text_messages(message):
-    if is_user_allowed(message):
-        bot.send_message(message.from_user.id, "Привет! Рад, что ты мне пишешь!")
+# Реакция на новое сообщение
+@client.on(events.NewMessage())
+async def normal_handler(event):
+
+    global debug_mode
+    global last_received_message
+    global selected_dir_for_saving
+
+    message = event.message
+    sender = await message.get_sender()
+    username = sender.username
+
+    if debug_mode:
+        dest = 'morin_2_bot'
     else:
-        bot.send_message(message.from_user.id, "У Вас нет доступа")
+        dest = username
 
-
-# Реакция на сообщение с прикрепленным файлом
-@bot.message_handler(content_types=['document'])
-def handle_file(message):
-
-    # Проверить отправителя
-    if not is_user_allowed(message):
-        bot.send_message(message.from_user.id, "У Вас нет прав доступа.")
+    # Проверить права доступа
+    if not is_user_allowed(username):
+        await event.respond('У Вас нет доступа!')
         return
 
-    # Нарисовать кнопочки для сохранения в определенную папку
-    buttons = draw_save_buttons(local_dirs)
+    # Проверить - это сообщение с данными, или с выбором папки
+    if not message.file:
+        # Проверить, что команду отправил тот же самый пользователь
+        last_user = last_received_message.chat.username
+        if not (username == last_user):
+            await send_prev_incomplete_receive_detected(event)
+            return
 
-    # Сохранить последнее сообщение с сохраненными файлами
-    global messages_with_file
-    messages_with_file = message
+        # Получить из ответа номер папки для скачивания
+        try:
+            dir_number = int(message.message)
+        except ValueError:
+            reply = 'Не удалось получить номер папки. Попробуйте снова'
+            await event.respond(reply)
+            return
 
-    # Отправить кнопки пользователю
-    bot.send_message(message.from_user.id, text="Куда сохранить файл?", reply_markup=buttons)
+        # Сохранить полученные данные
+        reply = 'Загружаю данные'
+        await event.respond(reply)
 
+        await client.download_media(message=last_received_message, file=local_dirs[dir_number])
 
-@bot.callback_query_handler(func=lambda call: True)
-def callback_worker(call):
+        reply = 'Данные загружены'
+        await event.respond(reply)
 
-    # Определяем нажатую кнопку (и, соответственно, папку для сохранения файла)
-    selected_path = call.data
+        last_received_message = None
+        return
+    elif not last_received_message is None:
+        await send_prev_incomplete_receive_detected(event)
+        return
 
-    # Проверяем нет ли уже такого файла. Если есть, то дописать цифру к имени файла
-    file_name = messages_with_file.document.file_name
-    counter = 1
-    initial_file_name = file_name
-    while os.path.exists(selected_path + file_name):
-        file_name = initial_file_name + "_" + str(counter)
-        counter = counter + 1
+    # Отправить ответ с вариантами того, куда сохранить полученные файлы
+    reply = 'Папки для сохранения файлов:\n'
+    for i in range(len(local_dirs)):
+        reply += str(i) + ': \'' + local_dirs[i] + '\'\n'
+    reply += '\n Введите цифру с номером папки'
+    last_received_message = message
+    await event.respond(reply)
 
-    # Сохраняем файл в указанную папку
-    try:
-        chat_id = messages_with_file.chat.id
-        file_info = bot.get_file(messages_with_file.document.file_id)
-        downloaded_file = bot.download_file(file_info.file_path)
-        src = selected_path + file_name
-        with open(src, 'wb') as new_file:
-            new_file.write(downloaded_file)
-        bot.reply_to(messages_with_file, "Файл сохранен с именем = " + file_name)
-    except Exception as e:
-        bot.reply_to(messages_with_file, e)
-
-
-# Handle all other messages.
-@bot.message_handler(func=lambda message: True, content_types=['audio', 'photo', 'voice', 'video', 'document', 'text', 'location', 'contact', 'sticker'])
-def default_command(message):
-    bot.send_message(message.chat.id, "This is the default command handler.")
-
-        
-# Задать непрерывный опрос телеграма на наличие новых сообщений
-bot.polling(none_stop=True, interval=0)
+# Запустить клиент
+client.start()
+client.run_until_disconnected()

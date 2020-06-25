@@ -1,13 +1,15 @@
 {
-	"telegramToken": "1163165731:AAFLt3bHNfohz-ulY8kU_0VVgBny5Vr4EkA",
+	"api_id": "1278307",
+	"api_hash": "e93bfc4241e25e8526468498dfc8217a",
+	"session": "adqwd12",
 
 	"allowedUsers": [
 		"spiny_105",
-		"mooseiclimb"
+		"mooseiclimb",
+		"morin_2_bot"
 	],
 
 	"localDirs": [
-		".\\папка_1\\подпапка\\",
-		".\\папка_2\\"
+		".\\new_dir\\"
 	]
 }
