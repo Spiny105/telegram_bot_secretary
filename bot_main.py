@@ -3,9 +3,6 @@ import json
 import os
 from telethon import TelegramClient, events
 
-# ключить/выключить отладку
-debug_mode = 0
-
 # Загрузить настройки из файла
 with open("settings.json", "r", encoding="utf-8") as read_file:
     configuration = json.load(read_file)
@@ -16,15 +13,9 @@ local_dirs = configuration.get("localDirs")
 api_id = configuration.get("api_id")
 api_hash = configuration.get("api_hash")
 session = configuration.get("session")
-last_received_message = None
 
-
-# Отправить сообщение о том, что идет сохранение предидущих данных
-async def send_prev_incomplete_receive_detected(event):
-    reply = 'Сначала должно быть завершено сохранение прошлых данных!\n' \
-            'Пользователь  = ' + last_received_message.sender.username
-    await event.respond(reply)
-
+# Папка для сохранения данных
+dir_number = 0
 
 # Проверить папки для сохранения файлов. Если их нет, то создать
 for path in local_dirs:
@@ -48,62 +39,57 @@ client = TelegramClient(session, api_id, api_hash)
 @client.on(events.NewMessage())
 async def normal_handler(event):
 
-    global debug_mode
-    global last_received_message
-    global selected_dir_for_saving
-
+    global dir_number
     message = event.message
     sender = await message.get_sender()
     username = sender.username
-
-    if debug_mode:
-        dest = 'morin_2_bot'
-    else:
-        dest = username
 
     # Проверить права доступа
     if not is_user_allowed(username):
         await event.respond('У Вас нет доступа!')
         return
 
-    # Проверить - это сообщение с данными, или с выбором папки
-    if not message.file:
-        # Проверить, что команду отправил тот же самый пользователь
-        last_user = last_received_message.chat.username
-        if not (username == last_user):
-            await send_prev_incomplete_receive_detected(event)
-            return
+    # Проверить, что в сообщении есть данные
+    if message.file:
 
-        # Получить из ответа номер папки для скачивания
-        try:
-            dir_number = int(message.message)
-        except ValueError:
-            reply = 'Не удалось получить номер папки. Попробуйте снова'
-            await event.respond(reply)
-            return
-
-        # Сохранить полученные данные
+        # Сохранить данные в заданную папку
         reply = 'Загружаю данные'
         await event.respond(reply)
-
-        await client.download_media(message=last_received_message, file=local_dirs[dir_number])
-
+        await client.download_media(message=message, file=local_dirs[dir_number])
         reply = 'Данные загружены'
         await event.respond(reply)
 
-        last_received_message = None
-        return
-    elif not last_received_message is None:
-        await send_prev_incomplete_receive_detected(event)
-        return
+    # Отправить пользователю список доступных папок
+    elif message.message.lower() == "список папок":
 
-    # Отправить ответ с вариантами того, куда сохранить полученные файлы
-    reply = 'Папки для сохранения файлов:\n'
-    for i in range(len(local_dirs)):
-        reply += str(i) + ': \'' + local_dirs[i] + '\'\n'
-    reply += '\n Введите цифру с номером папки'
-    last_received_message = message
-    await event.respond(reply)
+        reply = 'Папки для сохранения файлов:\n'
+        for i in range(len(local_dirs)):
+            reply += str(i) + ': \'' + local_dirs[i] + '\'\n'
+        await event.respond(reply)
+
+    # Задать новую папку для сохранения данных
+    elif message.message.isdigit():
+
+        try:
+            new_dir_number = int(message.message)
+            if new_dir_number > len(local_dirs):
+                raise ValueError
+            dir_number = new_dir_number
+            reply = 'Новая папка для сохранения = ' + local_dirs[dir_number]
+            await event.respond(reply)
+
+        except ValueError:
+            reply = 'Не корректный номер папки'
+            await event.respond(reply)
+            return
+    # Отправить пользователю список команд
+    else:
+
+        await event.respond('В сообщении не обнаружены данные\n'
+                            '\n'
+                            'Доступные команды:\n'
+                            'список папок\n'
+                            'Для измениния папки введите номер папки\n')
 
 # Запустить клиент
 client.start()
