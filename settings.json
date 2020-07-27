@@ -6,10 +6,11 @@
 	"allowedUsers": [
 		"spiny_105",
 		"mooseiclimb",
-		"morin_2_bot"
+		"test_105"
 	],
 
 	"localDirs": [
-		".\\new_dir\\"
+		".\\new_dir\\",
+		".\\new_dir_2\\"
 	]
 }

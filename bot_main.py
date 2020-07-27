@@ -1,7 +1,11 @@
 # coding=utf-8
 import json
-import os
 from telethon import TelegramClient, events
+from bot_actions import *
+
+# Для работы с консолью
+win_console_mode = False
+bot_working_dir = os.getcwd()
 
 # Загрузить настройки из файла
 with open("settings.json", "r", encoding="utf-8") as read_file:
@@ -14,83 +18,107 @@ api_id = configuration.get("api_id")
 api_hash = configuration.get("api_hash")
 session = configuration.get("session")
 
-# Папка для сохранения данных
-dir_number = 0
+# Создать профили пользователей
+profiles = dict().fromkeys(allowed_users, local_dirs[0])
 
 # Проверить папки для сохранения файлов. Если их нет, то создать
-for path in local_dirs:
-    try:
-        if not os.path.exists(path):
-            os.makedirs(path)
-    except OSError:
-        print("Не могу создать папку!")
-
-
-# Проверка на то, что пользователь в списке разрешенных
-def is_user_allowed(user):
-    return user in allowed_users
-
+check_folders(folders=local_dirs)
 
 # Запускаем клинт для взаимодействия с телеграмом
 client = TelegramClient(session, api_id, api_hash)
+
+# Включить загрузку файлов
+download_enabled = True
+
+start_required = True
 
 
 # Реакция на новое сообщение
 @client.on(events.NewMessage())
 async def normal_handler(event):
 
-    global dir_number
+    global profiles
+    global download_enabled
+    global start_required
+    global win_console_mode
+
     message = event.message
     sender = await message.get_sender()
     username = sender.username
 
     # Проверить права доступа
-    if not is_user_allowed(username):
+    if username not in allowed_users:
         await event.respond('У Вас нет доступа!')
         return
 
-    # Проверить, что в сообщении есть данные
-    if message.file:
+    # Включить/выключить режим консоли
+    if event.message.message.lower() == 'cmdon':
+        await event.respond('Включен режим консоли Windows \n' + cmd_exec_command('echo %cd%'))
+        win_console_mode = True
+        return
 
-        # Сохранить данные в заданную папку
-        reply = 'Загружаю данные'
-        await event.respond(reply)
-        await client.download_media(message=message, file=local_dirs[dir_number])
-        reply = 'Данные загружены'
-        await event.respond(reply)
+    if event.message.message.lower() == 'cmdoff':
+        os.chdir(bot_working_dir)
+        await event.respond('Выключен режим консоли Windows')
+        win_console_mode = False
+        return
+
+    # Взаимодействие с консолью
+    if win_console_mode:
+        await cmd_interact(event=event)
+        return
+
+    # Загрузить прикрепленные файлы, если они есть в сообщении
+    attachment_found = await get_attached_files_from_message(client=client, event=event,
+                                                             folder=profiles.get(username),
+                                                             download_enabled=download_enabled)
+
+    # Проверить на наличие ссылок на Яндекс.Диск
+    links_found = await get_cloud_services_files_from_message(event=event, folder=profiles.get(username),
+                                                              download_enabled=download_enabled)
+
+    # Выход
+    if event.message.message.lower() == 'exit':
+        exit(1)
+
+    # Если в сообщении были найдены данные, то выход
+    if links_found or attachment_found:
+        return
 
     # Отправить пользователю список доступных папок
-    elif message.message.lower() == "список папок":
+    if await process_showf_command(event=event, folders=local_dirs):
+        return
 
-        reply = 'Папки для сохранения файлов:\n'
-        for i in range(len(local_dirs)):
-            reply += str(i) + ': \'' + local_dirs[i] + '\'\n'
-        await event.respond(reply)
-
-    # Задать новую папку для сохранения данных
-    elif message.message.isdigit():
-
-        try:
-            new_dir_number = int(message.message)
-            if new_dir_number > len(local_dirs):
-                raise ValueError
-            dir_number = new_dir_number
-            reply = 'Новая папка для сохранения = ' + local_dirs[dir_number]
-            await event.respond(reply)
-
-        except ValueError:
-            reply = 'Не корректный номер папки'
-            await event.respond(reply)
-            return
     # Отправить пользователю список команд
-    else:
+    if await process_help_command(event=event):
+        return
 
-        await event.respond('В сообщении не обнаружены данные\n'
-                            '\n'
-                            'Доступные команды:\n'
-                            'список папок\n'
-                            'Для измениния папки введите номер папки\n')
+    # Команда stop
+    if await process_stop_command(event=event):
+        download_enabled = False
+        return
+
+    # Команда start
+    if await process_start_command(event=event):
+        download_enabled = True
+        return
+
+    # Перезапуск бота
+    if message.message.lower() == "restart":
+        start_required = True
+        await event.respond('Перезапуск бота')
+        await client.disconnect()
+        return
+
+    # Задать текущую папку для сохранения данных
+    if await process_specify_folder_command(event=event, folders=local_dirs,
+                                            sender=sender, users=profiles):
+        return
+
 
 # Запустить клиент
-client.start()
-client.run_until_disconnected()
+while start_required:
+    start_required = False
+    print("Запуск клиента")
+    client.start()
+    client.run_until_disconnected()
