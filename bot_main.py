@@ -32,7 +32,6 @@ download_enabled = True
 
 start_required = True
 
-
 # Реакция на новое сообщение
 @client.on(events.NewMessage())
 async def normal_handler(event):

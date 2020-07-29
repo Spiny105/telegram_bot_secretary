@@ -4,7 +4,9 @@ import re
 import shutil
 import zipfile
 import urllib.parse
-import subprocess
+from threading import Thread
+import requests
+from urllib.parse import urlencode
 
 # help - вывод списка всех команд                           +
 
@@ -16,9 +18,49 @@ import subprocess
 # restart - перезапуск со сбросом/остановкой всех загрузок  +-
 # stop - приостановить бота                                 +-
 # start - запустить бота                                    +-
-from pip._vendor.distlib.compat import raw_input
 
 
+# Класс для скачивания файлов с облачных сервисов в отдельном потоке
+class CloudDownloadThread(Thread):
+    def __init__(self, public_key, dir_for_save, event):
+        """Инициализация потока"""
+        Thread.__init__(self)
+        self.public_key = public_key
+        self.dir_for_save = dir_for_save
+        self.event=event
+
+    async def send_response(self):
+        await self.event.respond("Загружаю по ссылке = " + self.public_key)
+
+    def run(self):
+        """Запуск потока"""
+        base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
+
+        # Получаем загрузочную ссылку
+        final_url = base_url + urlencode(dict(public_key=self.public_key))
+        response = requests.get(final_url)
+        download_url = response.json()['href']
+
+        self.send_response()
+
+        # Загружаем файл
+        download_response = requests.get(download_url)
+
+        # Получаем имя файлам + перевести в читаемый вид (если есть НЕ латинские символы)
+        filename = urllib.parse.unquote(download_response.headers.get('Content-Disposition'))[29:]
+
+        # Загружаем файл
+        full_file_path = self.dir_for_save + filename
+        with open(full_file_path, 'wb') as f:  # Здесь укажите нужный путь к файлу
+            f.write(download_response.content)
+
+        # Распаковываем если это архив, то распаковать, а потом удалить
+        if zipfile.is_zipfile(full_file_path):
+            unpack_zipfile(full_file_path, self.dir_for_save, encoding='cp866')
+            os.remove(full_file_path)
+
+
+# Проверка папок для сохранения на существование
 def check_folders(folders):
     for path in folders:
         try:
@@ -26,7 +68,6 @@ def check_folders(folders):
                 os.makedirs(path)
         except OSError:
             print("Не могу создать папку!")
-
 
 # Распаковка файла с переименовыванием крякозыбр
 def unpack_zipfile(file, extract_dir, encoding='cp437'):
@@ -47,9 +88,6 @@ def unpack_zipfile(file, extract_dir, encoding='cp437'):
 
 # Загрузка файл с Яндекс.Диск по ссылке
 def get_file_from_yandex_disk(public_key, dir_for_save):
-
-    import requests
-    from urllib.parse import urlencode
 
     base_url = 'https://cloud-api.yandex.net/v1/disk/public/resources/download?'
 
@@ -88,11 +126,16 @@ async def get_cloud_services_files_from_message(event, folder, download_enabled)
         links = re.findall(regex, message.message)
 
         for item in links:
-            reply = 'Загружаю данные'
-            await event.respond(reply)
-            get_file_from_yandex_disk(public_key=item, dir_for_save=folder)
-            reply = 'Данные загружены'
-            await event.respond(reply)
+            try:
+                get_file_from_yandex_disk(public_key=item, dir_for_save=folder)
+                # thread = CloudDownloadThread(public_key=item, dir_for_save=folder, event=event)
+                # thread.start()
+            except Exception as e:
+                await event.respond("Ошибка: " + str(e))
+
+        reply = 'Данные загружены'
+        await event.respond(reply)
+
         return True
     else:
         return False
@@ -111,7 +154,12 @@ async def get_attached_files_from_message(client, event, folder, download_enable
         reply = 'Загружаю данные'
         await event.respond(reply)
 
-        result = await client.download_media(message=message, file=folder)
+        try:
+            result = await client.download_media(message=message, file=folder)
+        except Exception as e:
+            await event.respond("Ошибка: " + str(e))
+            return True
+
         if result:
             reply = 'Данные загружены'
         else:
