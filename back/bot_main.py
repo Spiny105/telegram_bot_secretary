@@ -24,7 +24,7 @@ session = configuration.get("session")
 yandex_disk_dir = configuration.get("yandex_disk_dir")
 
 # Период опроса папки Я.Диск
-YANDEX_DISK_FOLDER_SIZE_CHECH_PERIOD = 0.1
+YANDEX_DISK_FOLDER_SIZE_CHECH_PERIOD = 3.0
 
 # Создать профили пользователей
 profiles = dict().fromkeys(allowed_users, local_dirs[0])
@@ -123,51 +123,75 @@ async def normal_handler(event):
                                             sender=sender, users=profiles):
         return
 
+
+# Получить размер папки
+def get_folder_size(start_path='.'):
+    total_size = 0
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        for f in filenames:
+            fp = os.path.join(dirpath, f)
+            total_size += os.path.getsize(fp)
+    print(total_size)
+    return total_size
+
+
 # Циклическая проверка папки Я.Диск
 curr_ya_disk_folder_size = get_folder_size(yandex_disk_dir)
 prev_ya_disk_folder_size = curr_ya_disk_folder_size
-ya_disk_folder_size_changed = False
-ya_disk_checker_counter = 0
 
 
-async def start_yandex_folder_size_check():
-    global curr_ya_disk_folder_size
-    global prev_ya_disk_folder_size
-    global client
-    global ya_disk_folder_size_changed
-    global ya_disk_checker_counter
-
-    send_notification = False
-
-    # Получить размер папки Яндекс.Диск
-    curr_ya_disk_folder_size = get_folder_size(yandex_disk_dir)
-    if ya_disk_folder_size_changed:
-        if curr_ya_disk_folder_size == prev_ya_disk_folder_size:
-            ya_disk_checker_counter = ya_disk_checker_counter + 1
-            if ya_disk_checker_counter >= 100:
-                send_notification = True
-                ya_disk_folder_size_changed = False
-        else:
-            ya_disk_checker_counter = 0
-    else:
-        if curr_ya_disk_folder_size > prev_ya_disk_folder_size:
-            ya_disk_folder_size_changed = True
-            ya_disk_checker_counter = 0
-
-    print(str(curr_ya_disk_folder_size) + '  ' + str(prev_ya_disk_folder_size) + '  ' + str(ya_disk_checker_counter))
-    prev_ya_disk_folder_size = curr_ya_disk_folder_size
-
-    if send_notification:
-        for user in allowed_users:
-            await client.send_message(user, 'Изменился размер папки Я.Диск')
-    else:
-        await client.get_me()
+# def start_yandex_folder_size_service():
+#     global curr_ya_disk_folder_size
+#     global prev_ya_disk_folder_size
+#     global client
+#
+#     # # Получить размер папки Яндекс.Диск
+#     # time.sleep(YANDEX_DISK_FOLDER_SIZE_CHECH_PERIOD)
+#     # curr_ya_disk_folder_size = get_folder_size(yandex_disk_dir)
+#     # if curr_ya_disk_folder_size > prev_ya_disk_folder_size:
+#     #     while True:
+#     #         prev_ya_disk_folder_size = curr_ya_disk_folder_size
+#     #         time.sleep(YANDEX_DISK_FOLDER_SIZE_CHECH_PERIOD)
+#     #         curr_ya_disk_folder_size = get_folder_size(yandex_disk_dir)
+#     #         if curr_ya_disk_folder_size == get_folder_size(yandex_disk_dir):
+#     #             for user in allowed_users:
+#     #                 await client.send_message(user, "Что-то загрузилось на Я.Диск")
+#     #             break
+#
+#
+#
+#     my_timer = threading.2Timer(YANDEX_DISK_FOLDER_SIZE_CHECH_PERIOD, start_yandex_folder_size_service)
+#     my_timer.start()
 
 
 # Запускаем клиент для взаимодействия с телеграмом
 with client:
     client.start()
-    # Запустить циклическую проверку директории Я.Диск
-    while True:
-        client.loop.run_until_complete(start_yandex_folder_size_check())
-        time.sleep(YANDEX_DISK_FOLDER_SIZE_CHECH_PERIOD)
+    client.run_until_disconnected()
+
+
+# async def main():
+#     while True:
+#         pass
+    # prev_ya_disk_folder_size = get_folder_size(yandex_disk_dir)
+    #
+    # while True:
+    #     # Получить размер папки Яндекс.Диск
+    #     time.sleep(15)
+    #     curr_ya_disk_folder_size = get_folder_size(yandex_disk_dir)
+    #     if curr_ya_disk_folder_size > prev_ya_disk_folder_size:
+    #         while True:
+    #             prev_ya_disk_folder_size = curr_ya_disk_folder_size
+    #             time.sleep(15)
+    #             curr_ya_disk_folder_size = get_folder_size(yandex_disk_dir)
+    #             if curr_ya_disk_folder_size == get_folder_size(yandex_disk_dir):
+    #                 for user in allowed_users:
+    #                     await client.send_message(user, "Что-то загрузилось на Я.Диск")
+    #                 break
+
+
+# with client:
+#     client.start()
+#     client.run_until_disconnected()
+
+

@@ -179,8 +179,8 @@ async def process_help_command(event):
                             # 'stop - приостановить бота, старые загрузки продолжаются \n'
                             # 'start - запустить бота \n'
                             # 'restart - перезапуск со сбросом/остановкой всех загрузок \n'
-                            'cmdon - включить режим консоли Windows\n'
-                            'cmdoff - выключить режим консоли Windows\n'
+                            'cmdon - включить режим консоли Windows'
+                            'cmdoff - выключить режим консоли Windows'
                             'cmd %command% - консоль Windows\n')
         processed = True
     return processed
@@ -280,13 +280,3 @@ async def cmd_interact(event):
         await event.respond(str_out[0:4000])
         str_out = str_out[4001:]
     await event.respond(str_out)
-
-
-# Получить размер папки
-def get_folder_size(start_path='.'):
-    total_size = 0
-    for dirpath, dirnames, filenames in os.walk(start_path):
-        for f in filenames:
-            fp = os.path.join(dirpath, f)
-            total_size += os.path.getsize(fp)
-    return total_size
